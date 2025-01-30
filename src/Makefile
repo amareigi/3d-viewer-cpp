@@ -1,4 +1,4 @@
-TARGET=3D_Viewer
+TARGET=3D_Viewer1
 FLAGS=-Wall -Werror -Wextra -std=c11
 CC=gcc $(FLAGS)
 FILE=s21_3D_Viewer
