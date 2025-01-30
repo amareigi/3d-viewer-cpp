@@ -1,88 +1,96 @@
-TARGET=3D_Viewer1
-FLAGS=-Wall -Werror -Wextra -std=c11
-CC=gcc $(FLAGS)
-FILE=s21_3D_Viewer
-MODULES=modules/*
-FILETEST=tests/*
-FILEREPORT=s21_test_report
-FILETESTO=s21_test
-DIRREPORT=report
-COVFLAG=-fprofile-arcs -ftest-coverage
+CC 							= c++ 
+FLAG_COV 				= -O1 -g --coverage -fno-inline 
+FLAG_ER 				= -Wall -Wextra -Werror -std=c++17 -fPIC
+MODEL 					= model/*.cpp
+CONTROLLER 			= controller/*.cpp
+VIEW						= view/*.cpp
+MAIN_CPP				= main.cpp
+OUTDIR 					= BUILD
+TESTDIR 				= TESTS/*.cc
+VIEWER 					= $(MODEL) $(CONTROLLER) $(VIEW) $(MAIN_CPP)
+VIEWER_TESTS 		= $(MODEL)
+GTESTS_O 				= gtest_*.o
+FLAG_TESTS 			= -fPIC -L/usr/local/lib -lgtest -pthread -lgtest_main -lm -lgcov -I/usr/lib/qt5/bin -I/usr/local/include -I/usr/include -DQT_CORE_LIB -DQT_WIDGETS_LIB -I/usr/include/x86_64-linux-gnu/qt5/QtCore -I/usr/include/x86_64-linux-gnu/qt5/QtWidgets-I/usr/include/x86_64-linux-gnu/qt5 -lGL -lQt5Core -lQt5Widgets -lQt5Gui -DQT_WIDGETS_LIB -DQT_GUI_LIB -DQT_CORE_LIB -I/usr/include/x86_64-linux-gnu/qt5/QtWidgets -I/usr/include/x86_64-linux-gnu/qt5 -I/usr/include/x86_64-linux-gnu/qt5/QtGui -I/usr/include/x86_64-linux-gnu/qt5 -I/usr/include/x86_64-linux-gnu/qt5/QtCore -I/usr/include/x86_64-linux-gnu/qt5
+INCPATH       	= -I../3dviewer -I. -I/usr/include/x86_64-linux-gnu/qt5 -I/usr/include/x86_64-linux-gnu/qt5/QtOpenGL -I/usr/include/x86_64-linux-gnu/qt5/QtWidgets -I/usr/include/x86_64-linux-gnu/qt5/QtGui -I/usr/include/x86_64-linux-gnu/qt5/QtCore -I. -I/usr/lib/x86_64-linux-gnu/qt5/mkspecs/linux-g++
 
-OS = $(shell uname)
+all: tests install gcov_report
 
-ifeq ($(OS), Darwin)
-	TESTFLAGS=-pthread -lm -lcheck
-	OPEN_CMD=open
-else
-	TESTFLAGS=-pthread -lcheck_pic -lrt -lm -lsubunit
-	OPEN_CMD=xdg-open
-endif
+tests: clean build
+	for file in $(TESTDIR); do \
+		$(CC) -c $(FLAG_ER) $(INCPATH) -c -o $(OUTDIR)/$$(basename $$file .cpp).o $$file; \
+	done
+	$(CC) $(FLAG_COV) $(FLAG_ER) $(INCPATH) -o $(OUTDIR)/tests $(VIEWER_TESTS) $(OUTDIR)/$(GTESTS_O) $(FLAG_TESTS) -DTESTS_MAIN
+	./$(OUTDIR)/tests 
 
+install: uninstal
+	@echo "Начало установки"
+	@tmpfile=$$(mktemp); \
+	{	\
+		mkdir ./BUILD; \
+		cd ./BUILD && qmake ../view/ && make && cp viewer ../3dviewer; \
+		cd ../; \
+	} > $$tmpfile 2>&1; \
+	rm $$tmpfile
+	@echo "Установка успешно завершена."
 
-all: clean gcov_report install
+uninstal:
+	@rm -rf ./BUILD
+	@rm -rf 3dviewer
+	@echo "Программа удалена."
 
-#####################################
-# all: temp
+gcov_report: make_report report
 
-# temp:
-# 	$(CC) -fsanitize=address -g modules/*.c  dev_main/*.c $(TESTFLAGS)
+make_report: 
+	@gcovr --html-details --exclude-unreachable-branches $(TESTDIR) -o $(OUTDIR)/report.html
+	@gcovr --html-details --object-directory=BUILD --exclude-unreachable-branches \
+	--filter=model/'model.cpp' \
+	--filter=model/'edge.cpp' \
+	--filter=model/'figure.cpp' \
+	--filter=model/'file_reader.cpp' \
+	--filter=model/'model_operation_result.cpp' \
+	--filter=model/'normalization_parameters.cpp' \
+	--filter=model/'scene.cpp' \
+	--filter=model/'three_d_point.cpp' \
+	--filter=model/'vertex.cpp' \
+	-o $(OUTDIR)/report.html;
 
-# comp:
-# 	$(CC) modules/*.c  dev_main/*.c $(TESTFLAGS)
+report:
+	@echo "..открытие отчета."
+	@open $(OUTDIR)/report.html
 
-# val:
-# 	valgrind --tool=memcheck --leak-check=yes --track-origins=yes -s ./a.out
-#####################################
+style_check:
+	@echo "Проверка стиля кода..."
+	@cp ../materials/linters/.clang-format ./
+	@find . -name "*.cpp" -o -name "*.h" | xargs clang-format -n > tmp.log 2>&1
+	@if ! grep -q "warning" tmp.log; then \
+		echo "\033[32mСтиль кода соответствует.\033[0m"; \
+		else \
+		echo "\033[31mСтиль кода не соответствует.\033[0m"; \
+		fi
+	@rm -rf .clang-format tmp.log
 
-install:
-	mkdir ./build
-	mkdir ~/Desktop/$(TARGET)/
-	cd ./build && qmake ../view/ && make && cp viewer ~/Desktop/$(TARGET)/$(TARGET).app \
-	&& mv viewer $(TARGET).app
-	
-uninstall:
-	rm -rf ~/Desktop/$(TARGET) ./build
+style_fix:
+	@cp ../materials/linters/.clang-format ./
+	@find . -name "*.cpp" -o -name "*.h" | xargs clang-format -i
+	@echo "\033[33mСтиль кода исправлен.\033[0m";
+	@rm -rf .clang-format
 
-dist:
+clean:
+	@-rm -rf BUILD
+	@-rm -rf dist
+	@echo "Папка очищена."
+
+build:
+	@-rm -rf BUILD/*
+	@mkdir -p BUILD
+
+dist: 
 	mkdir dist
 	mkdir dist/src
-	cp -r view/ tests/ modules/ obj/ Makefile *.h dist/src/
-	cd ./dist && tar cvzf $(TARGET)_v1.0.tgz *
+	cp -r controller/ TESTS/ model/ obj_files/ view/ Makefile *.md dist/src/
+	cd ./dist && tar cvzf $(TARGET)_v2.0.tgz *
 	rm -rf dist/src/
 
 dvi:
-	$(OPEN_CMD) $(TARGET).html
-
-test: 
-	$(CC) $(FILETEST).c $(MODULES).c -o $(FILETESTO) $(TESTFLAGS)
-	./$(FILETESTO)
-
-test_val: 
-	$(CC) $(FILETEST).c $(MODULES).c -o $(FILETESTO) $(TESTFLAGS)
-	valgrind --tool=memcheck --log-file="valgrind_check.log" --leak-check=yes \
-	--track-origins=yes -s ./$(FILETESTO)
-
-gcov_report:
-	$(CC) $(COVFLAG) $(FILETEST).c $(MODULES).c -o $(FILEREPORT) $(TESTFLAGS)
-	./$(FILEREPORT)
-	lcov -t "$(FILE)" -o test.info -c -d .  
-	genhtml -o $(DIRREPORT) test.info
-	rm -rf *.o *.a *.gcno *.gcda *.info *.log $(FILETESTO) $(FILEREPORT)
-	$(OPEN_CMD) $(DIRREPORT)/index.html
-
-rep: gcov_report
-
-clean:
-	rm -rf *.o *.a *.gcno *.gcda *.info *.log $(DIRREPORT) $(FILETESTO) $(FILEREPORT) ./build* ./dist
-
-#style
-cpp:
-	cppcheck --enable=all --suppress=missingIncludeSystem *.c *.h $(MODULES).c $(FILETEST).c
-
-clang:
-	cp ../materials/linters/.clang-format .clang-format
-	clang-format -n *.h $(MODULES).c
-	rm .clang-format 
-
-check: cpp clang
+	@open ./readmeViewer.md
+	@echo "Инструкция открыта."
